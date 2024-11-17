@@ -1,7 +1,7 @@
 import json
 from typing import List
 
-from src.model.patient_data import PatientData
+from src.model.patient_data import PatientData, PatientHistory
 from src.ner_model import NERModel
 from src.repository.cold_storage_repository import ColdStorageRepository
 from src.repository.hot_storage_repository import HotStorageRepository
@@ -28,35 +28,51 @@ class MLService:
         print(f"Processando texto: {texto_prontuario}")
         entities = self.ner_model.predict(texto_prontuario)
 
-        current_data = self.hot_storage.get_patient_data(patient_id, visit_id)
+        current_data = self.hot_storage.get_patient_data(patient_id, visit_id) or self.cold_storage.get_patient_visit_agg(patient_id, visit_id)
         patient_data = PatientData(
-            id_paciente=patient_id,
-            id_atendimento=visit_id,
+            patient_id=patient_id,
+            visit_id=visit_id,
             alterations=current_data.get("alterations", []) if current_data else [],
             cancer_detected=False,
         )
 
-        self.extract_alterations(entities, patient_data)
+        new_alterations = self.extract_alterations(entities, patient_data)
+        patient_data.alterations = list(set(patient_data.alterations + new_alterations))
         self.check_for_cancer_detection(patient_data, data_atendimento)        
 
         patient_data_dict = patient_data.__dict__
         self.hot_storage.save_patient_data(patient_id, visit_id, patient_data_dict)
         self.rabbitmq_repository.publish(patient_data_dict)
 
-        self.cold_storage.save_patient_data(patient_id, visit_id, patient_data_dict)
+        patient_history = PatientHistory(
+            patient_id=patient_id,
+            visit_id=visit_id,
+            visit_date=data_atendimento,
+            medical_record=texto_prontuario,
+            patient_sex=data.get("sexo", "Unknown"),
+            entities=entities,
+            results={
+                "alterations": new_alterations,
+                "cancer_detected": patient_data.cancer_detected,
+                "cancer_detected_date": patient_data.cancer_detected_date,
+            }
+        )
+        self.cold_storage.save_patient_history(patient_history)
     
     def extract_alterations(self, entities: list, patient_data: PatientData) -> List[str]:
+        new_alterations = []
         current_alteration = None
         for token, label in entities:
             if label.startswith("B-Disorder"):
                 if current_alteration:
-                    patient_data.alterations.append(current_alteration)
+                    new_alterations.append(current_alteration)
                 current_alteration = token
             elif label.startswith("I-Disorder") and current_alteration:
                 current_alteration += " " + token
         if current_alteration:
-            patient_data.alterations.append(current_alteration)
-        patient_data.alterations = list(set(patient_data.alterations))
+            new_alterations.append(current_alteration)
+        new_alterations = list(set(new_alterations))
+        return new_alterations
 
     def check_for_cancer_detection(self, patient_data: PatientData, data_atendimento):
         for alteration in patient_data.alterations:
