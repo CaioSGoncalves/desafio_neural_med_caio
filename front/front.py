@@ -69,7 +69,7 @@ def query_patient_history(patient_id):
 st.title("RabbitMQ, Redis e PostgreSQL Dashboard")
 
 # Menu de navegação
-tabs = st.tabs(["Enviar Mensagem", "Mensagens Recebidas", "Consulta Redis", "Consulta Histórica"])
+tabs = st.tabs(["Enviar Mensagem", "Mensagens Processadas", "Consulta Redis", "Consulta Histórica"])
 
 with tabs[0]:
     st.header("Enviar Mensagem")
