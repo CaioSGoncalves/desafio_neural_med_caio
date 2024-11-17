@@ -3,6 +3,8 @@ import streamlit as st
 import pika
 import json
 import redis  # Biblioteca do Redis
+import psycopg2  # Biblioteca para PostgreSQL
+from psycopg2.extras import RealDictCursor  # Para obter resultados como dicionários
 from datetime import datetime
 
 # Configurações do RabbitMQ
@@ -13,6 +15,12 @@ QUEUE_RESULTADO = os.getenv('RABBITMQ_QUEUE_OUTPUT', 'resultado')    # Fila de l
 # Configurações do Redis
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+
+# Configurações do PostgreSQL
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "myuser")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mypassword")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "medical_db")
 
 # Conexão com o Redis
 redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -41,11 +49,27 @@ def consume_messages_from_rabbitmq():
     connection.close()
     return messages
 
+# Função para consultar histórico no PostgreSQL
+def query_patient_history(patient_id):
+    conn = psycopg2.connect(
+        host=POSTGRES_HOST,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        dbname=POSTGRES_DB
+    )
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT * FROM public.patient_history WHERE patient_id = %s;", (patient_id,))
+            results = cursor.fetchall()
+            return results
+    finally:
+        conn.close()
+
 # Interface Streamlit
-st.title("RabbitMQ e Redis Dashboard")
+st.title("RabbitMQ, Redis e PostgreSQL Dashboard")
 
 # Menu de navegação
-tabs = st.tabs(["Enviar Mensagem", "Mensagens Recebidas", "Consulta Redis"])
+tabs = st.tabs(["Enviar Mensagem", "Mensagens Recebidas", "Consulta Redis", "Consulta Histórica"])
 
 with tabs[0]:
     st.header("Enviar Mensagem")
@@ -66,7 +90,6 @@ with tabs[0]:
     id_atendimento = st.text_input("ID Atendimento", value=id_atendimento_default)
     data_atendimento = st.date_input("Data de Atendimento", value=data_atendimento_default)
 
-    # Botão para enviar a mensagem
     if st.button("Enviar", key="send_message"):
         if id_paciente and data_nascimento and sexo and texto_prontuario and id_atendimento and data_atendimento:
             message = {
@@ -88,26 +111,40 @@ with tabs[1]:
         messages = consume_messages_from_rabbitmq()
         if messages:
             for msg in messages:
-                st.json(msg)  # Exibe a mensagem no formato JSON
+                st.json(msg)
         else:
             st.info("Nenhuma mensagem na fila 'resultado'.")
 
 with tabs[2]:
     st.header("Consulta Dados do Redis")
 
-    # Campos de entrada para buscar dados
     id_paciente_redis = st.text_input("ID Paciente", key="id_paciente_redis")
     id_atendimento_redis = st.text_input("ID Atendimento", key="id_atendimento_redis")
 
-    # Gerando a chave concatenada
     redis_key = f"patient:{id_paciente_redis}-visit:{id_atendimento_redis}"
 
     if st.button("Consultar", key="consult_redis"):
         if id_paciente_redis and id_atendimento_redis:
             value = redis_client.get(redis_key)
             if value:
-                st.json(json.loads(value))  # Exibe o valor formatado como JSON
+                st.json(json.loads(value))
             else:
                 st.warning(f"Nenhum valor encontrado para a chave '{redis_key}'.")
         else:
             st.error("Por favor, preencha ambos os campos: ID Paciente e ID Atendimento.")
+
+with tabs[3]:
+    st.header("Consulta Histórica no PostgreSQL")
+
+    patient_id = st.text_input("ID Paciente para Consulta Histórica", key="patient_id_history")
+
+    if st.button("Consultar Histórico", key="consult_history"):
+        if patient_id:
+            results = query_patient_history(patient_id)
+            if results:
+                for record in results:
+                    st.json(record)
+            else:
+                st.warning(f"Nenhum histórico encontrado para o ID Paciente '{patient_id}'.")
+        else:
+            st.error("Por favor, insira o ID do Paciente.")

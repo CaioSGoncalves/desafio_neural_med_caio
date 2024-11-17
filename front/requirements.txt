@@ -1,3 +1,4 @@
 streamlit
 pika
 redis
+psycopg2-binary
