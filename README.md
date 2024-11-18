@@ -43,4 +43,5 @@ docker-compose up
 -  **Frontend Application**: Access the frontend at `http://localhost:8501`.
   
 
-## Record
+## Demonstration
+![caption](demonstration.gif)
