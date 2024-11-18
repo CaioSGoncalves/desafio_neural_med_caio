@@ -6,6 +6,7 @@
 - Configurar CI/CI no Github
 - Deploy na GCP com Cloud Run ou Google Kubernetes Engine
 - Deploy dos bancos(Redis, PosgreSQL) em serviço gerenciados na GCP
+- Em caso de erro ao processar da fila de input, enviar para uma fila de erro e não interromper a execução.
 
 
 # Perguntas extras:
