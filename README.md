@@ -66,3 +66,7 @@ docker-compose run --rm ml_service python -m unittest tests/*
 
 ## Demonstration
 ![caption](demonstration.gif)
+
+
+## Considerations:
+[Click here](https://github.com/CaioSGoncalves/desafio_neural_med_caio/blob/main/consideracoes.md)
