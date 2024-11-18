@@ -41,7 +41,12 @@ docker-compose up
 4.  **Access the Services**:
 -  **RabbitMQ Management UI**: Open your browser and go to `http://localhost:15672` (default user: `guest`, password: `guest`).
 -  **Frontend Application**: Access the frontend at `http://localhost:8501`.
-  
+
+5.  **Run UnitTests**: To run the unit tests for the ML Service, execute the following command:
+```bash
+docker-compose run --rm ml_service python -m unittest tests/*
+```
+
 
 ## Demonstration
 ![caption](demonstration.gif)
