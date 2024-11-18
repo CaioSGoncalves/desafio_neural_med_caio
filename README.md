@@ -1,15 +1,31 @@
 # Desafio Neural Med Caio
   
 
-## Project Folder Structure
+## MLService Folder Structure
+```bash
+└── ml_service
+    ├── Dockerfile
+    ├── main.py
+    ├── requirements.txt
+    ├── src
+    │   ├── config.py
+    │   ├── ml_service.py
+    │   ├── model
+    │   │   └── patient_data.py
+    │   ├── ner_model.py
+    │   └── repository
+    │       ├── cold_storage_repository.py
+    │       ├── hot_storage_repository.py
+    │       └── rabbitmq_repository.py
+    └── tests
+        └── test_ml_service.py
 ```
-desafio_neural_med_caio
-│   README.md
-│   docker-compose.yml    
-│
-└───front/
-└───ml_service/
-```
+
+- **main.py**: The runner of the project.
+- **ml_service.py**: `MlService` class is the core class responsible for the complete pipeline, managing the flow from the input queue to the output queue and coordinating all other classes.
+- **ner_model.py**: `NerModel` class which loads the model and makes predictions.
+- **repository**: Classes responsible for database and queue integrations.
+
 
 ## Infra
 -  **Front**: The frontend application used to send input messages, read output messages, query Redis, and query PostgreSQL.
