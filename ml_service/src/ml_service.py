@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import List, Tuple
 
 from src.model.patient_data import PatientData, PatientHistory
 from src.ner_model import NERModel
@@ -27,23 +27,26 @@ class MLService:
 
         print(f"Processando texto: {texto_prontuario}")
         entities = self.ner_model.predict(texto_prontuario)
+        new_alterations = self.extract_alterations(entities)
 
-        current_data = self.hot_storage.get_patient_data(patient_id, visit_id) or self.cold_storage.get_patient_visit_agg(patient_id, visit_id)
-        patient_data = PatientData(
-            patient_id=patient_id,
-            visit_id=visit_id,
-            alterations=current_data.get("alterations", []) if current_data else [],
-            cancer_detected=False,
-        )
+        if new_alterations:
+            current_data = self.hot_storage.get_patient_data(patient_id, visit_id) or self.cold_storage.get_patient_visit_agg(patient_id, visit_id)
+            patient_data = PatientData(
+                patient_id=patient_id,
+                visit_id=visit_id,
+                alterations=current_data.get("alterations", []) if current_data else [],
+                cancer_detected=False,
+            )
+            patient_data.alterations = list(set(patient_data.alterations + new_alterations))
+            (
+                patient_data.cancer_detected,
+                patient_data.cancer_detected_date
+            ) = self.check_for_cancer_detection(patient_data.alterations, data_atendimento)
 
-        new_alterations = self.extract_alterations(entities, patient_data)
-        patient_data.alterations = list(set(patient_data.alterations + new_alterations))
-        self.check_for_cancer_detection(patient_data, data_atendimento)        
+            self.hot_storage.save_patient_data(patient_id, visit_id, patient_data.__dict__)
+            self.rabbitmq_repository.publish(patient_data.__dict__)
 
-        patient_data_dict = patient_data.__dict__
-        self.hot_storage.save_patient_data(patient_id, visit_id, patient_data_dict)
-        self.rabbitmq_repository.publish(patient_data_dict)
-
+        cancer_detected, cancer_detected_date = self.check_for_cancer_detection(new_alterations, data_atendimento)
         patient_history = PatientHistory(
             patient_id=patient_id,
             visit_id=visit_id,
@@ -53,13 +56,14 @@ class MLService:
             entities=entities,
             results={
                 "alterations": new_alterations,
-                "cancer_detected": patient_data.cancer_detected,
-                "cancer_detected_date": patient_data.cancer_detected_date,
+                "cancer_detected": cancer_detected,
+                "cancer_detected_date": cancer_detected_date,
+                
             }
         )
         self.cold_storage.save_patient_history(patient_history)
     
-    def extract_alterations(self, entities: list, patient_data: PatientData) -> List[str]:
+    def extract_alterations(self, entities: list) -> List[str]:
         new_alterations = []
         current_alteration = None
         for token, label in entities:
@@ -68,17 +72,20 @@ class MLService:
                     new_alterations.append(current_alteration)
                 current_alteration = token
             elif label.startswith("I-Disorder") and current_alteration:
-                current_alteration += " " + token
+                if "##" in token:
+                    current_alteration += token
+                else:
+                    current_alteration += " " + token
         if current_alteration:
-            new_alterations.append(current_alteration)
+            new_alterations.append(current_alteration.replace("##", ""))
         new_alterations = list(set(new_alterations))
         return new_alterations
 
-    def check_for_cancer_detection(self, patient_data: PatientData, data_atendimento):
-        for alteration in patient_data.alterations:
+    def check_for_cancer_detection(self, alterations: list, data_atendimento: str) -> Tuple[bool, str]:
+        for alteration in alterations:
             if any(x in alteration.lower() for x in ["câncer", "cancer", "ca"]):
-                patient_data.cancer_detected = True
-                patient_data.cancer_detected_date = data_atendimento
+                return True, data_atendimento
+        return False, None
     
     def run(self):
         self.rabbitmq_repository.connect()
